@@ -140,6 +140,15 @@ IMPORTANTE:
 - NO inventar
 - Basarse en el contenido de la factura
 
+HORA:
+- Busca la hora en TODO el documento, no solo cerca de la palabra "Hora". Es muy común que aparezca en alguno de estos lugares (boletas peruanas reales):
+  1. Junto a la fecha, en la misma línea que el número de serie de la factura. Ejemplo: "F006-0004421 10/06/2026 22:27:24" -> hora = 22:27:24
+  2. Con etiqueta explícita "HORA:" en el pie de página, junto a otros códigos de la transacción (terminal, lote, referencia). El año ahí suele venir en 2 dígitos. Ejemplo: "AP:072336 FECHA:23/06/26 HORA:17:07" -> hora = 17:07
+  3. Junto a la fecha con puntos en vez de barras, sin ninguna etiqueta, casi siempre en una línea de códigos de terminal cerca del final. Ejemplo: "23.06.26 17:34" -> hora = 17:34
+  4. Con sufijo AM/PM explícito, en cualquier variante de escritura ("PM", "pm", "p.m.", "p. m."). Ejemplo: "20/06/2026 01:54:51 PM" -> hora = 13:54:51 (convierte siempre a formato 24 horas)
+- Siempre que encuentres una hora, conviértela a formato 24 horas HH:MM:SS (agrega ":00" de segundos si no vienen).
+- Si después de revisar todo el documento genuinamente no hay ninguna hora impresa, devuelve "" — no inventes una.
+
 MONTOS:
 - TOTAL: TOTAL, IMPORTE TOTAL, TOTAL A PAGAR
 - IGV: IGV, I.G.V., IGV 18%
@@ -210,12 +219,33 @@ def validar(datos, texto):
         datos["ruc"] = RUC_NATURAL
 
     def limpiar(valor):
-        val = re.sub(r"[^\d.]", "", str(valor))
+        val = re.sub(r"[^\d.,]", "", str(valor))
         if not val:
             return None
-        num = float(val)
-        if "." not in val:
-            num = num / 100
+
+        pos_coma = val.rfind(",")
+        pos_punto = val.rfind(".")
+        pos_decimal = max(pos_coma, pos_punto)
+
+        if pos_decimal == -1:
+            # Sin separador decimal visible: el OCR probablemente perdio el
+            # punto/coma y los ultimos 2 digitos son los centavos.
+            num = float(val) / 100
+            return round(num, 2)
+
+        # El separador mas a la derecha es el decimal real; cualquier otro
+        # separador antes de esa posicion es de miles y se descarta.
+        entero = re.sub(r"[.,]", "", val[:pos_decimal]) or "0"
+        decimal = re.sub(r"[.,]", "", val[pos_decimal + 1:])
+        if len(decimal) == 0:
+            decimal = "00"
+        elif len(decimal) == 1:
+            decimal = decimal + "0"
+        elif len(decimal) > 2:
+            entero = entero + decimal
+            decimal = "00"
+
+        num = float(entero + "." + decimal)
         return round(num, 2)
 
     total = limpiar(datos.get("total"))
